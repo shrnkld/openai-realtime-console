@@ -232,31 +232,43 @@ export function ConsolePage() {
    * .appendInputAudio() for each sample
    */
   const startRecording = async () => {
-    const wavRecorder = wavRecorderRef.current;
-    if (wavRecorder.getStatus() === 'recording') {
-      await wavRecorder.pause();
-    }
-    setIsRecording(true);
     const client = clientRef.current;
+    const wavRecorder = wavRecorderRef.current;
     const wavStreamPlayer = wavStreamPlayerRef.current;
+
+    if (!client.isConnected()) {
+      console.error("RealtimeAPI is not connected");
+      return; // Exit the function if not connected
+    }
+
+    setIsRecording(true);
     const trackSampleOffset = await wavStreamPlayer.interrupt();
     if (trackSampleOffset?.trackId) {
       const { trackId, offset } = trackSampleOffset;
       await client.cancelResponse(trackId, offset);
     }
-    await wavRecorder.record((data) => client.appendInputAudio(data.mono));
+    await wavRecorder.record((data) => {
+      if (client.isConnected()) {
+        client.appendInputAudio(data.mono);
+      } else {
+        console.warn("Skipping audio append: RealtimeAPI is not connected");
+      }
+    });
   };
 
   /**
    * In push-to-talk mode, stop recording
    */
   const stopRecording = async () => {
+    const client = clientRef.current;
     const wavRecorder = wavRecorderRef.current;
-    if (wavRecorder.getStatus() === 'recording') {
-      setIsRecording(false);
-      const client = clientRef.current;
-      await wavRecorder.pause();
+
+    setIsRecording(false);
+    await wavRecorder.pause();
+    if (client.isConnected()) {
       client.createResponse();
+    } else {
+      console.warn("Skipping response creation: RealtimeAPI is not connected");
     }
   };
 
@@ -387,6 +399,7 @@ export function ConsolePage() {
 
     // Set instructions
     client.updateSession({ instructions: instructions });
+    console.log("Instructions set:", instructions);
     // Set transcription, otherwise we don't get user transcriptions back
     client.updateSession({ input_audio_transcription: { model: 'whisper-1' } });
 
@@ -533,6 +546,14 @@ export function ConsolePage() {
       </div>
       <div className="content-main">
         <div className="content-center">
+          <div className="audio-visualizers">
+            <div className="visualization-entry client">
+              <canvas ref={clientCanvasRef} />
+            </div>
+            <div className="visualization-entry server">
+              <canvas ref={serverCanvasRef} />
+            </div>
+          </div>
           <div className="push-to-talk-container">
             {isConnected && canPushToTalk && (
               <Button
